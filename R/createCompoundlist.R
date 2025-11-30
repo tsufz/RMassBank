@@ -123,7 +123,9 @@ createCompoundlist <- function() {
 				   Name=names,
 				   SMILES=unlist(SMILES_codes),
 				   CAS=CAS_numbers)
-	fwrite(compoundlist, file='Compoundlist.csv')
+	readr::write_csv(x = compoundlist,
+	                 file = 'Compoundlist.csv',
+	                 na = "")
 }
 
 #' Filter a Compoundlist for missing SMILES values
