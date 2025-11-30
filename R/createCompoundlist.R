@@ -141,9 +141,14 @@ createCompoundlist <- function() {
 #' @author pstahlhofen
 #' @export
 filterCompoundlist <- function(filename) {
-	compoundlist <- readr::read_csv(file = filename)
+	compoundlist <- readr::read_csv(file = filename,
+	                                na = "",
+	                                trim_ws = TRUE,
+	                                show_col_types = FALSE)
 	filtered <- compoundlist[which(compoundlist$SMILES!=""), ]
-	readr::write_csv(x = filtered, file = 'Compoundlist_filtered.csv')
+	readr::write_csv(x = filtered,
+	                 file = 'Compoundlist_filtered.csv',
+	                 na = "")
 }
 
 #' Convert a Compoundlist into an SDF
@@ -162,7 +167,10 @@ filterCompoundlist <- function(filename) {
 #' @author pstahlhofen
 #' @export
 compoundlist2SDF <- function(filename) {
-	compoundlist <- readr::read_csv(file = filename)
+	compoundlist <- readr::read_csv(file = filename,
+	                                na = "",
+	                                trim_ws = TRUE,
+	                                show_col_types = FALSE)
 	SMILES <- compoundlist$SMILES
 	if (any(SMILES=="")) {
 		stop(paste("The provided compoundlist must be filtered",
