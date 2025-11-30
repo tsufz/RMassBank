@@ -1,36 +1,52 @@
-retrieveDataWithRetry <- function(url, timeout, maximumNumberOfRetries = 5, retryDelayInSeconds = 3){
+retrieveDataWithRetry <-
+  function(url, timeout, maximumNumberOfRetries = 5, retryDelayInSeconds = 3) {
+    data <- NULL
+    queryIsSuccessful <- FALSE
+    numberOfRetries <- 0
+    while (!queryIsSuccessful && numberOfRetries < maximumNumberOfRetries) {
+      data <- tryCatch(
+        expr = {
+          res <- httr::GET(utils::URLencode(url))
+          data <- httr::content(res, type = "text", encoding = "UTF-8")
+          queryIsSuccessful <- TRUE
+          data
+        },
+        warning = function(w) {
+          numberOfRetries <<- numberOfRetries + 1
+          if (RMassBank.env$verbose.output) {
+            cat(paste("### Warning ### Web query failed (",
+              numberOfRetries, " / ",
+              maximumNumberOfRetries, ") for url '",
+              url, "' because of warning '", w, "'\n",
+              sep = ""
+            ))
+          }
 
-  data <- NULL
-  queryIsSuccessful <- FALSE
-  numberOfRetries <- 0
-  while(!queryIsSuccessful & numberOfRetries < maximumNumberOfRetries){
-    data <- tryCatch(
-      expr = {
-        res <- GET(utils::URLencode(url))
-        data <- httr::content(res, type="text", encoding="UTF-8")
+          if (numberOfRetries < maximumNumberOfRetries) {
+            Sys.sleep(time = retryDelayInSeconds)
+          }
+        },
+        error = function(e) {
+          numberOfRetries <<- numberOfRetries + 1
+          if (RMassBank.env$verbose.output) {
+            cat(paste("### Warning ### Web query failed (",
+              numberOfRetries, " / ",
+              maximumNumberOfRetries, ") for url '",
+              url, "' because of error '",
+              e, "'\n",
+              sep = ""
+            ))
+          }
 
-        queryIsSuccessful <- TRUE
-        data
-      },
-      warning=function(w){
-        numberOfRetries <<- numberOfRetries + 1
-        if(RMassBank.env$verbose.output)
-          cat(paste("### Warning ### Web query failed (", numberOfRetries, " / ", maximumNumberOfRetries, ") for url '", url, "' because of warning '", w, "'\n", sep = ""))
-        if(numberOfRetries < maximumNumberOfRetries)
-          Sys.sleep(time = retryDelayInSeconds)
-      },
-      error=function(e){
-        numberOfRetries <<- numberOfRetries + 1
-        if(RMassBank.env$verbose.output)
-          cat(paste("### Warning ### Web query failed (", numberOfRetries, " / ", maximumNumberOfRetries, ") for url '", url, "' because of error '", e, "'\n", sep = ""))
-        if(numberOfRetries < maximumNumberOfRetries)
-          Sys.sleep(time = retryDelayInSeconds)
-      }
-    )
+          if (numberOfRetries < maximumNumberOfRetries) {
+            Sys.sleep(time = retryDelayInSeconds)
+          }
+        }
+      )
+    }
+
+    return(data)
   }
-
-  return(data)
-}
 
 #' Retrieve information from Cactus
 #'
@@ -65,18 +81,24 @@ retrieveDataWithRetry <- function(url, timeout, maximumNumberOfRetries = 5, retr
 #' @export
 #'
 #'
-getCactus <- function(identifier, representation){
-  identifier <- gsub('#', '%23', identifier)
-  ret <- tryCatch(httr::GET(paste("https://cactus.nci.nih.gov/chemical/structure/",
-                            utils::URLencode(identifier), "/", representation, sep = "")),
-                  error = function(e) NA)
-  if (all(is.na(ret)))
+getCactus <- function(identifier, representation) {
+  identifier <- gsub("#", "%23", identifier)
+  ret <- tryCatch(
+    httr::GET(paste("https://cactus.nci.nih.gov/chemical/structure/",
+      utils::URLencode(identifier), "/",
+      representation,
+      sep = ""
+    )),
+    error = function(e) NA
+  )
+  if (all(is.na(ret))) {
     return(NA)
-  if (ret["status_code"] == 404)
+  }
+  if (ret["status_code"] == 404) {
     return(NA)
+  }
   ret <- httr::content(ret)
   return(unlist(strsplit(ret, "\n")))
-
 }
 
 #' Search Pubchem CID
@@ -100,43 +122,44 @@ getCactus <- function(identifier, representation){
 #' getPcId("MKXZASYAUGDDCJ-NJAFHUGGSA-N")
 #'
 #' @export
-getPcId <- function(query, from = "inchikey")
-{
-	baseURL <- "https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound"
-	url <- paste(baseURL, from, query, "description", "json", sep="/")
+getPcId <- function(query, from = "inchikey") {
+  baseURL <- "https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound"
+  url <- paste(baseURL, from, query, "description", "json", sep = "/")
+  errorvar <- 0
+  currEnvir <- environment()
 
-	errorvar <- 0
-	currEnvir <- environment()
-
-	tryCatch({
-	    res <- GET(utils::URLencode(url))
-	    data <- httr::content(res, type="text", encoding="UTF-8")
+  tryCatch(
+    {
+      res <- httr::GET(utils::URLencode(url))
+      data <- httr::content(res, type = "text", encoding = "UTF-8")
     },
-		error=function(e){
-		currEnvir$errorvar <- 1
-	})
+    error = function(e) {
+      currEnvir$errorvar <- 1
+    }
+  )
 
-	if(errorvar){
-		return(NA)
-	}
+  if (errorvar) {
+    return(NA)
+  }
 
-	# This happens if the InChI key is not found:
-	r <- fromJSON(data)
+  # This happens if the InChI key is not found:
+  r <- jsonlite::fromJSON(data)
 
-	if(!is.null(r$Fault))
-	return(NA)
+  if (!is.null(r$Fault)) {
+    return(NA)
+  }
 
-	titleEntry <- which(unlist(lapply(r$InformationList$Information, function(i) !is.null(i$Title))))
+  titleEntry <- which(unlist(lapply(r$InformationList$Information, function(i) !is.null(i$Title))))
 
-	titleEntry <- titleEntry[which.min(sapply(titleEntry, function(x)r$InformationList$Information[[x]]$CID))]
+  titleEntry <- titleEntry[which.min(sapply(titleEntry, function(x) r$InformationList$Information[[x]]$CID))]
 
-	PcID <- r$InformationList$Information[[titleEntry]]$CID
+  PcID <- r$InformationList$Information[[titleEntry]]$CID
 
-	if(is.null(PcID)){
-		return(NA)
-	} else{
-		return(PcID)
-	}
+  if (is.null(PcID)) {
+    return(NA)
+  } else {
+    return(PcID)
+  }
 }
 
 
@@ -161,35 +184,34 @@ getPcId <- function(query, from = "inchikey")
 #' getDTXSID("MKXZASYAUGDDCJ-NJAFHUGGSA-N")
 #' }
 #' @export
-getDTXSID <- function(key, api_key)
+getDTXSID <- function(key, api_key) {
+  errorvar <- 0
+  currEnvir <- environment()
 
-{
-    errorvar <- 0
-    currEnvir <- environment()
-
-    tryCatch({
-        base_url <- stringr::str_c("https://comptox.epa.gov/ctx-api/chemical/search/equal/", key)
-        url <- httr2::request(base_url)
-        url <- url |> httr2::req_headers("x-api-key" = api_key, "accept" = "application/json")
-        resp <- httr2::req_perform(url)
-        data <- resp |> httr2::resp_body_json()
-
+  tryCatch(
+    {
+      base_url <- stringr::str_c("https://comptox.epa.gov/ctx-api/chemical/search/equal/", key)
+      url <- httr2::request(base_url)
+      url <- url |> httr2::req_headers("x-api-key" = api_key, "accept" = "application/json")
+      resp <- httr2::req_perform(url)
+      data <- resp |> httr2::resp_body_json()
     },
-    error=function(e){
-        currEnvir$errorvar <- 1
-    })
-
-    if(errorvar){
-        return(NA)
+    error = function(e) {
+      currEnvir$errorvar <- 1
     }
+  )
 
-    dtxsid <- data[[1]]$dtxsid
+  if (errorvar) {
+    return(NA)
+  }
 
-    if(is.null(dtxsid)){
-        return(NA)
-    } else{
-        return(dtxsid)
-    }
+  dtxsid <- data[[1]]$dtxsid
+
+  if (is.null(dtxsid)) {
+    return(NA)
+  } else {
+    return(dtxsid)
+  }
 }
 
 #' Search CCTE DTXCID
@@ -213,34 +235,32 @@ getDTXSID <- function(key, api_key)
 #' getDTXCID("MKXZASYAUGDDCJ-NJAFHUGGSA-N")
 #' }
 #' @export
-getDTXCID <- function(key, api_key)
+getDTXCID <- function(key, api_key) {
+  errorvar <- 0
+  currEnvir <- environment()
 
-{
-    errorvar <- 0
-    currEnvir <- environment()
-
-    tryCatch({
-        base_url <- stringr::str_c("https://comptox.epa.gov/ctx-api/chemical/search/equal/", key)
-        url <- httr2::request(base_url)
-        url <- url |> httr2::req_headers("x-api-key" = api_key, "accept" = "application/json")
-        resp <- httr2::req_perform(url)
-        data <- resp |> httr2::resp_body_json()
-
+  tryCatch(
+    {
+      base_url <- stringr::str_c("https://comptox.epa.gov/ctx-api/chemical/search/equal/", key)
+      url <- httr2::request(base_url)
+      url <- url |> httr2::req_headers("x-api-key" = api_key, "accept" = "application/json")
+      resp <- httr2::req_perform(url)
+      data <- resp |> httr2::resp_body_json()
     },
-    error=function(e){
-    })
+    error = function(e) {}
+  )
 
-    if(errorvar){
-        return(NA)
-    }
+  if (errorvar) {
+    return(NA)
+  }
 
-    dtxcid <- data[[1]]$dtxcid
+  dtxcid <- data[[1]]$dtxcid
 
-    if(is.null(dtxcid)){
-        return(NA)
-    } else{
-        return(dtxcid)
-    }
+  if (is.null(dtxcid)) {
+    return(NA)
+  } else {
+    return(dtxcid)
+  }
 }
 
 #' Search CCTE Preferred Name
@@ -265,36 +285,35 @@ getDTXCID <- function(key, api_key)
 #' }
 #'
 #' @export
-getPrefName <- function(key, api_key)
+getPrefName <- function(key, api_key) {
+  errorvar <- 0
+  currEnvir <- environment()
 
-{
-    errorvar <- 0
-    currEnvir <- environment()
-
-    tryCatch({
-        base_url <- stringr::str_c("https://comptox.epa.gov/ctx-api/chemical/search/equal/", key)
-        url <- httr2::request(base_url)
-        url <- url |> httr2::req_headers("x-api-key" = api_key, "accept" = "application/json")
-        url |> httr2::req_dry_run()
-        resp <- httr2::req_perform(url)
-        data <- resp |> httr2::resp_body_json()
-
+  tryCatch(
+    {
+      base_url <- stringr::str_c("https://comptox.epa.gov/ctx-api/chemical/search/equal/", key)
+      url <- httr2::request(base_url)
+      url <- url |> httr2::req_headers("x-api-key" = api_key, "accept" = "application/json")
+      url |> httr2::req_dry_run()
+      resp <- httr2::req_perform(url)
+      data <- resp |> httr2::resp_body_json()
     },
-    error=function(e){
-        currEnvir$errorvar <- 1
-    })
-
-    if(errorvar){
-        return(NA)
+    error = function(e) {
+      currEnvir$errorvar <- 1
     }
+  )
 
-    pref_name <- data[[1]]$preferredName
+  if (errorvar) {
+    return(NA)
+  }
 
-    if(is.null(pref_name)){
-        return(NA)
-    } else{
-        return(pref_name)
-    }
+  pref_name <- data[[1]]$preferredName
+
+  if (is.null(pref_name)) {
+    return(NA)
+  } else {
+    return(pref_name)
+  }
 }
 
 #' Search CCTE CAS registration number
@@ -319,35 +338,34 @@ getPrefName <- function(key, api_key)
 #' }
 #'
 #' @export
-getCASRN <- function(key, api_key)
+getCASRN <- function(key, api_key) {
+  errorvar <- 0
+  currEnvir <- environment()
 
-{
-    errorvar <- 0
-    currEnvir <- environment()
-
-    tryCatch({
-        base_url <- stringr::str_c("https://comptox.epa.gov/ctx-api/chemical/search/equal/", key)
-        url <- httr2::request(base_url)
-        url <- url |> httr2::req_headers("x-api-key" = api_key, "accept" = "application/json")
-        resp <- httr2::req_perform(url)
-        data <- resp |> httr2::resp_body_json()
-
+  tryCatch(
+    {
+      base_url <- stringr::str_c("https://comptox.epa.gov/ctx-api/chemical/search/equal/", key)
+      url <- httr2::request(base_url)
+      url <- url |> httr2::req_headers("x-api-key" = api_key, "accept" = "application/json")
+      resp <- httr2::req_perform(url)
+      data <- resp |> httr2::resp_body_json()
     },
-    error=function(e){
-        currEnvir$errorvar <- 1
-    })
-
-    if(errorvar){
-        return(NA)
+    error = function(e) {
+      currEnvir$errorvar <- 1
     }
+  )
 
-    cas_rn <- data[[1]]$casrn
+  if (errorvar) {
+    return(NA)
+  }
 
-    if(is.null(cas_rn)){
-        return(NA)
-    } else{
-        return(cas_rn)
-    }
+  cas_rn <- data[[1]]$casrn
+
+  if (is.null(cas_rn)) {
+    return(NA)
+  } else {
+    return(cas_rn)
+  }
 }
 
 #' Search CCTE SMILES
@@ -372,35 +390,34 @@ getCASRN <- function(key, api_key)
 #' }
 #'
 #' @export
-getDTXSMILES <- function(key, api_key)
+getDTXSMILES <- function(key, api_key) {
+  errorvar <- 0
+  currEnvir <- environment()
 
-{
-    errorvar <- 0
-    currEnvir <- environment()
-
-    tryCatch({
-        base_url <- stringr::str_c("https://comptox.epa.gov/ctx-api/chemical/search/equal/", key)
-        url <- httr2::request(base_url)
-        url <- url |> httr2::req_headers("x-api-key" = api_key, "accept" = "application/json")
-        resp <- httr2::req_perform(url)
-        data <- resp |> httr2::resp_body_json()
-
+  tryCatch(
+    {
+      base_url <- stringr::str_c("https://comptox.epa.gov/ctx-api/chemical/search/equal/", key)
+      url <- httr2::request(base_url)
+      url <- url |> httr2::req_headers("x-api-key" = api_key, "accept" = "application/json")
+      resp <- httr2::req_perform(url)
+      data <- resp |> httr2::resp_body_json()
     },
-    error=function(e){
-        currEnvir$errorvar <- 1
-    })
-
-    if(errorvar){
-        return(NA)
+    error = function(e) {
+      currEnvir$errorvar <- 1
     }
+  )
 
-    smiles <- data[[1]]$smiles
+  if (errorvar) {
+    return(NA)
+  }
 
-    if(is.null(smiles)){
-        return(NA)
-    } else{
-        return(smiles)
-    }
+  smiles <- data[[1]]$smiles
+
+  if (is.null(smiles)) {
+    return(NA)
+  } else {
+    return(smiles)
+  }
 }
 
 #' Retrieve information from CTS
@@ -427,39 +444,43 @@ getDTXSMILES <- function(key, api_key)
 #' data <- getCtsRecord("UHOVQNZJYSORNB-UHFFFAOYSA-N")
 #' # show all synonym "types"
 #' types <- unique(unlist(lapply(data$synonyms, function(i) i$type)))
-#' \dontrun{print(types)}
+#' \dontrun{
+#' print(types)
+#' }
 #'
 #' @author Michele Stravs, Eawag <stravsmi@@eawag.ch>
 #' @export
-getCtsRecord <- function(key)
-{
-	baseURL <- "https://cts.fiehnlab.ucdavis.edu/service/compound/"
+getCtsRecord <- function(key) {
+  baseURL <- "https://cts.fiehnlab.ucdavis.edu/service/compound/"
 
-	errorvar <- 0
-	currEnvir <- environment()
+  errorvar <- 0
+  currEnvir <- environment()
 
-	##tryCatch a CTS timeout
-	##
-	tryCatch({
-			url <- paste0(baseURL,key)
-			res <- GET(utils::URLencode(url))
-			data <- httr::content(res, type="text", encoding="UTF-8")
-		},
-		error=function(e){
-			currEnvir$errorvar <- 1
-		}
-	)
+  ## tryCatch a CTS timeout
+  ##
+  tryCatch(
+    {
+      url <- stringr::str_c(baseURL, key)
+      res <- httr::GET(utils::URLencode(url))
+      data <- httr::content(res, type = "text", encoding = "UTF-8")
+    },
+    error = function(e) {
+      currEnvir$errorvar <- 1
+    }
+  )
 
-	if(errorvar){
-		warning("CTS seems to be currently unavailable or incapable of interpreting your request")
-		return(NULL)
-	}
+  if (errorvar) {
+    warning("CTS seems to be currently unavailable or incapable of interpreting your request")
+    return(NULL)
+  }
 
-	r <- fromJSON(data)
-	if(length(r) == 1)
-		if(r == "You entered an invalid InChIKey")
-			return(list())
-	return(r)
+  r <- jsonlite::fromJSON(data)
+  if (length(r) == 1) {
+    if (r == "You entered an invalid InChIKey") {
+      return(list())
+    }
+  }
+  return(r)
 }
 
 #' Convert a single ID to another using CTS.
@@ -474,43 +495,42 @@ getCtsRecord <- function(key)
 #' k <- getCtsKey("benzene", "Chemical Name", "InChIKey")
 #' @author Michele Stravs, Eawag <stravsmi@@eawag.ch>
 #' @export
-getCtsKey <- function(query, from = "Chemical Name", to = "InChIKey")
-{
-	baseURL <- "https://cts.fiehnlab.ucdavis.edu/service/convert"
-	url <- paste(baseURL, from, to, query, sep='/')
-	errorvar <- 0
-	currEnvir <- environment()
+getCtsKey <- function(query, from = "Chemical Name", to = "InChIKey") {
+  baseURL <- "https://cts.fiehnlab.ucdavis.edu/service/convert"
+  url <- paste(baseURL, from, to, query, sep = "/")
+  errorvar <- 0
+  currEnvir <- environment()
 
-	##tryCatch a CTS timeout
-	##
-	tryCatch({
-			res <- GET(utils::URLencode(url))
-			data <- httr::content(res, type="text", encoding="UTF-8")
-		},
-		error=function(e){
-			currEnvir$errorvar <- 1
-		}
-	)
+  ## tryCatch a CTS timeout
+  ##
+  tryCatch(
+    {
+      res <- httr::GET(utils::URLencode(url))
+      data <- httr::content(res, type = "text", encoding = "UTF-8")
+    },
+    error = function(e) {
+      currEnvir$errorvar <- 1
+    }
+  )
 
-	if(errorvar){
-		warning("CTS seems to be currently unavailable or incapable of interpreting your request")
-		return(NULL)
-	}
+  if (errorvar) {
+    warning("CTS seems to be currently unavailable or incapable of interpreting your request")
+    return(NULL)
+  }
 
-	if(res$status_code != 200){
-	  warning(paste("CTS has return code", res$status_code))
-	  return(NULL)
-	}
+  if (res$status_code != 200) {
+    warning(paste("CTS has return code", res$status_code))
+    return(NULL)
+  }
 
-	r <- fromJSON(data)
-	if(length(r) == 0)
-		return(NULL)
-	else
-	{
-		# read out the results in simplest form:
-		results <- unlist(lapply(r, function(row) row$result))
-		return(results)
-	}
+  r <- jsonlite::fromJSON(data)
+  if (length(r) == 0) {
+    return(NULL)
+  } else {
+    # read out the results in simplest form:
+    results <- unlist(lapply(r, function(row) row$result))
+    return(results)
+  }
 }
 
 #' Select a subset of external IDs from a CTS record.
@@ -522,7 +542,6 @@ getCtsKey <- function(query, from = "Chemical Name", to = "InChIKey")
 #' given database.
 #'
 #' @examples
-#'
 #' \dontrun{
 #' # Return all CAS registry numbers stored for benzene.
 #' data <- getCtsRecord("UHOVQNZJYSORNB-UHFFFAOYSA-N")
@@ -531,14 +550,12 @@ getCtsKey <- function(query, from = "Chemical Name", to = "InChIKey")
 #'
 #' @author Michele Stravs, Eawag <stravsmi@@eawag.ch>
 #' @export
-CTS.externalIdSubset <- function(data, database)
-{
-	select <- which(unlist(lapply(data$externalIds, function(id)
-							{
-								id[["name"]] == database
-							})))
-	keyEntries <- data$externalIds[select]
-	keys <- unlist(lapply(keyEntries, function(e) e[["value"]]))
+CTS.externalIdSubset <- function(data, database) {
+  select <- which(unlist(lapply(data$externalIds, function(id) {
+    id[["name"]] == database
+  })))
+  keyEntries <- data$externalIds[select]
+  keys <- unlist(lapply(keyEntries, function(e) e[["value"]]))
 }
 
 #' Find all available databases for a CTS record
@@ -549,7 +566,6 @@ CTS.externalIdSubset <- function(data, database)
 #' identifiers stored in the record.
 #'
 #' @examples
-#'
 #' \dontrun{
 #' # Return all databases for which the benzene entry has
 #' # links in the CTS record.
@@ -560,230 +576,264 @@ CTS.externalIdSubset <- function(data, database)
 #'
 #' @author Michele Stravs, Eawag <stravsmi@@eawag.ch>
 #' @export
-CTS.externalIdTypes <- function(data)
-{
-	unique(unlist(lapply(data$externalIds, function(id)
-							{
-								id[["name"]]
-							})))
+CTS.externalIdTypes <- function(data) {
+  unique(unlist(lapply(data$externalIds, function(id) {
+    id[["name"]]
+  })))
 }
 
-.pubChemOnline <- function(){
-	baseURL <- "https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound"
-	url <- paste(baseURL, "inchikey", "QEIXBXXKTUNWDK-UHFFFAOYSA-N", "description", "json", sep="/")
+.pubChemOnline <- function() {
+  baseURL <- "https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound"
+  url <- paste(baseURL,
+               "inchikey",
+               "QEIXBXXKTUNWDK-UHFFFAOYSA-N",
+               "description",
+               "json",
+               sep = "/")
 
-	errorvar <- 0
-	currEnvir <- environment()
-	tryCatch({
-	    res <- GET(utils::URLencode(url))
-	    ret <- httr::content(res, type="text", encoding="UTF-8")
-	  },
-	  error=function(e){
-		currEnvir$errorvar <- 1
-	})
+  errorvar <- 0
+  currEnvir <- environment()
+  tryCatch(
+    {
+      res <- httr::GET(utils::URLencode(url))
+      ret <- httr::content(res, type = "text", encoding = "UTF-8")
+    },
+    error = function(e) {
+      currEnvir$errorvar <- 1
+    }
+  )
 
-  if(errorvar){
-	warning("Pubchem is currently offline")
-	return(FALSE)
-  } else{
-	return(TRUE)
+  if (errorvar) {
+    warning("Pubchem is currently offline")
+    return(FALSE)
+  } else {
+    return(TRUE)
   }
 }
 
 
+getPcCHEBI <- function(query, from = "inchikey") {
+  # Get the JSON-Data from Pubchem
+  baseURL <- "https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound"
+  url <- paste(baseURL, from, query, "synonyms", "json", sep = "/")
+  errorvar <- 0
+  currEnvir <- environment()
 
-getPcCHEBI <- function(query, from = "inchikey")
-{
-	# Get the JSON-Data from Pubchem
-	baseURL <- "https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound"
-	url <- paste(baseURL, from, query, "synonyms", "json", sep="/")
-	errorvar <- 0
-	currEnvir <- environment()
+  tryCatch(
+    {
+      res <- httr::GET(utils::URLencode(url))
+      data <- httr::content(res, type = "text", encoding = "UTF-8")
+    },
+    error = function(e) {
+      currEnvir$errorvar <- 1
+    }
+  )
 
-	tryCatch({
-		  res <- GET(utils::URLencode(url))
-		  data <- httr::content(res, type="text", encoding="UTF-8")
-		},
-		error=function(e){
-		currEnvir$errorvar <- 1
-	})
+  if (errorvar) {
+    return(NA)
+  }
 
-	if(errorvar){
-		return(NA)
-	}
+  r <- jsonlite::fromJSON(data)
 
-	r <- fromJSON(data)
+  # This happens if the InChI key is not found:
+  if (!is.null(r$Fault)) {
+    return(NA)
+  }
 
-	# This happens if the InChI key is not found:
-	if(!is.null(r$Fault))
-	return(NA)
+  # Find the entries which contain Chebi-links
+  synonymEntry <-
+      which(unlist(lapply(
+          r$InformationList$Information, function(i) !is.null(i$Synonym))))
+  synonymList <- r$InformationList$Information[[synonymEntry]]$Synonym
+  matchChebi <- which(grepl("CHEBI:", synonymList, fixed = TRUE))
 
-	# Find the entries which contain Chebi-links
-	synonymEntry <- which(unlist(lapply(r$InformationList$Information, function(i) !is.null(i$Synonym))))
-	synonymList <- r$InformationList$Information[[synonymEntry]]$Synonym
-	matchChebi <- which(grepl("CHEBI:", synonymList, fixed=TRUE))
-
-	# It doesn't matter if the db is down or if chebi isn't found, so return NA also
-	if(length(matchChebi) == 0){
-		return (NA)
-	} else {
-		return (sapply(matchChebi, function(x) synonymList[[x]]))
-	}
+  # It doesn't matter if the db is down or if chebi isn't found, so return NA also
+  if (length(matchChebi) == 0) {
+    return(NA)
+  } else {
+    return(sapply(matchChebi, function(x) synonymList[[x]]))
+  }
 }
 
 
-##This function returns a sensible name for the compound
-getPcSynonym <- function (query, from = "inchikey")
-{
-	# Get the JSON-Data from Pubchem
-	baseURL <- "https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound"
-	url <- paste(baseURL, from, query, "description", "json", sep="/")
+## This function returns a sensible name for the compound
+getPcSynonym <- function(query, from = "inchikey") {
+  # Get the JSON-Data from Pubchem
+  baseURL <- "https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound"
+  url <- paste(baseURL, from, query, "description", "json", sep = "/")
 
-	errorvar <- 0
-	currEnvir <- environment()
+  errorvar <- 0
+  currEnvir <- environment()
 
-	tryCatch({
-		  res <- GET(utils::URLencode(url))
-		  data <- httr::content(res, type="text", encoding="UTF-8")
-		},
-		error=function(e){
-		currEnvir$errorvar <- 1
-	})
+  tryCatch(
+    {
+      res <- httr::GET(utils::URLencode(url))
+      data <- httr::content(res, type = "text", encoding = "UTF-8")
+    },
+    error = function(e) {
+      currEnvir$errorvar <- 1
+    }
+  )
 
-	if(errorvar){
-		return(NA)
-	}
+  if (errorvar) {
+    return(NA)
+  }
 
-	r <- fromJSON(data)
+  r <- jsonlite::fromJSON(data)
 
-	# This happens if the InChI key is not found:
-	if(!is.null(r$Fault))
-	return(NA)
+  # This happens if the InChI key is not found:
+  if (!is.null(r$Fault)) {
+    return(NA)
+  }
 
-	# Find the synonym
+  # Find the synonym
 
-	titleEntry <- which(unlist(lapply(r$InformationList$Information, function(i) !is.null(i$Title))))
+  titleEntry <-
+      which(unlist(lapply(
+          r$InformationList$Information, function(i) !is.null(i$Title))))
 
-	titleEntry <- titleEntry[which.min(sapply(titleEntry, function(x)r$InformationList$Information[[x]]$CID))]
+  titleEntry <-
+      titleEntry[which.min(
+          sapply(titleEntry, function(x) r$InformationList$Information[[x]]$CID))]
 
-	title <- r$InformationList$Information[[titleEntry]]$Title
+  title <- r$InformationList$Information[[titleEntry]]$Title
 
-	if(is.null(title)){
-		return(NA)
-	} else{
-		return(title)
-	}
+  if (is.null(title)) {
+    return(NA)
+  } else {
+    return(title)
+  }
 }
 
 
-##A function to retrieve a IUPAC Name from Pubchem
-getPcIUPAC <- function (query, from = "inchikey")
-{
-	# Get the JSON-Data from Pubchem
-	baseURL <- "https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound"
-	url <- paste(baseURL, from, query, "record", "json", sep="/")
+## A function to retrieve a IUPAC Name from Pubchem
+getPcIUPAC <- function(query, from = "inchikey") {
+  # Get the JSON-Data from Pubchem
+  baseURL <- "https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound"
+  url <- paste(baseURL, from, query, "record", "json", sep = "/")
 
-	errorvar <- 0
-	currEnvir <- environment()
+  errorvar <- 0
+  currEnvir <- environment()
 
-	tryCatch({
-		  res <- GET(utils::URLencode(url))
-		  data <- httr::content(res, type="text", encoding="UTF-8")
-		},
-		error=function(e){
-		currEnvir$errorvar <- 1
-	})
+  tryCatch(
+    {
+      res <- httr::GET(utils::URLencode(url))
+      data <- httr::content(res, type = "text", encoding = "UTF-8")
+    },
+    error = function(e) {
+      currEnvir$errorvar <- 1
+    }
+  )
 
-	if(errorvar){
-		return(NA)
-	}
+  if (errorvar) {
+    return(NA)
+  }
 
-	r <- fromJSON(data)
+  r <- jsonlite::fromJSON(data)
 
-	# This happens if the InChI key is not found:
-	if(!is.null(r$Fault))
-	return(NA)
+  # This happens if the InChI key is not found:
+  if (!is.null(r$Fault)) {
+    return(NA)
+  }
 
-	# Find the IUPAC-Names
-	if(!is.null(r$PC_Compounds[[1]]$props)){
-		IUPACIndex <- which(unlist(lapply(r$PC_Compounds[[1]]$props, function(i) (i$urn$label == "IUPAC Name"))))
-		if(length(IUPACIndex) > 0){
-			# Retrieve all IUPAC-Names
-			IUPACEntries <- lapply(IUPACIndex, function(x) r$PC_Compounds[[1]]$props[[x]])
-			if(!is.null(IUPACEntries)){
-				# Is there a preferred IUPAC-Name? If yes, retrieve that
-				PrefIUPAC <- which(unlist(lapply(IUPACEntries, function(x) x$urn$name == "Preferred")))
-			}	else{return(NA)}
-		}	else{return(NA)}
-	}	else{return(NA)}
+  # Find the IUPAC-Names
+  if (!is.null(r$PC_Compounds[[1]]$props)) {
+    IUPACIndex <-
+        which(unlist(lapply(
+            r$PC_Compounds[[1]]$props, function(i) (i$urn$label == "IUPAC Name"))))
+    if (length(IUPACIndex) > 0) {
+      # Retrieve all IUPAC-Names
+      IUPACEntries <-
+          lapply(IUPACIndex, function(x) r$PC_Compounds[[1]]$props[[x]])
+      if (!is.null(IUPACEntries)) {
+        # Is there a preferred IUPAC-Name? If yes, retrieve that
+        PrefIUPAC <-
+            which(unlist(lapply(IUPACEntries, function(x) x$urn$name == "Preferred")))
+      } else {
+        return(NA)
+      }
+    } else {
+      return(NA)
+    }
+  } else {
+    return(NA)
+  }
 
 
-	if(length(PrefIUPAC) == 1){
-		return(IUPACEntries[[PrefIUPAC]]$value$sval)
-	} else{
-		# Else it doesn't matter which
-		return(IUPACEntries[[1]]$value$sval)
-	}
+  if (length(PrefIUPAC) == 1) {
+    return(IUPACEntries[[PrefIUPAC]]$value$sval)
+  } else {
+    # Else it doesn't matter which
+    return(IUPACEntries[[1]]$value$sval)
+  }
 }
 
-getPcInchiKey <- function(query, from = "smiles"){
-	# Get the JSON-Data from Pubchem
-	baseURL <- "https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound"
-	url <- paste(baseURL, from, query, "json", sep="/")
-	errorvar <- 0
-	currEnvir <- environment()
+getPcInchiKey <- function(query, from = "smiles") {
+  # Get the JSON-Data from Pubchem
+  baseURL <- "https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound"
+  url <- paste(baseURL, from, query, "json", sep = "/")
+  errorvar <- 0
+  currEnvir <- environment()
 
-	tryCatch({
-		  res <- httr::GET(utils::URLencode(url))
-		  data <- httr::content(res, type="text", encoding="UTF-8")
-		},
-		error=function(e){
-		currEnvir$errorvar <- 1
-	})
+  tryCatch(
+    {
+      res <- httr::GET(utils::URLencode(url))
+      data <- httr::content(res, type = "text", encoding = "UTF-8")
+    },
+    error = function(e) {
+      currEnvir$errorvar <- 1
+    }
+  )
 
-	if(errorvar){
-		return(NA)
-	}
+  if (errorvar) {
+    return(NA)
+  }
 
-	r <- rjson::fromJSON(data)
+  r <- rjson::fromJSON(data)
 
-	# This happens if the InChI key is not found:
-	if(!is.null(r$Fault))
-	return(NA)
+  # This happens if the InChI key is not found:
+  if (!is.null(r$Fault)) {
+    return(NA)
+  }
 
-	# Find the entries which contain Chebi-links
-	if(!is.null(r$PC_Compounds[[1]]$props)){
-		INKEYindex <- which(sapply(r$PC_Compounds[[1]]$props, function(x) x$urn$label) == "InChIKey")
-		if(length(INKEYindex) > 0){
-			return(r$PC_Compounds[[1]]$props[[INKEYindex]]$value$sval)
-		}	else{return(NA)}
-	}	else{return(NA)}
-
-
+  # Find the entries which contain Chebi-links
+  if (!is.null(r$PC_Compounds[[1]]$props)) {
+    INKEYindex <-
+        which(sapply(r$PC_Compounds[[1]]$props, function(x) x$urn$label) == "InChIKey")
+    if (length(INKEYindex) > 0) {
+      return(r$PC_Compounds[[1]]$props[[INKEYindex]]$value$sval)
+    } else {
+      return(NA)
+    }
+  } else {
+    return(NA)
+  }
 }
 
-getPcSDF <- function(query, from = "smiles"){
-	baseURL <- "https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound"
-	url <- paste(baseURL, from, query, "sdf", sep="/")
+getPcSDF <- function(query, from = "smiles") {
+  baseURL <- "https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound"
+  url <- paste(baseURL, from, query, "sdf", sep = "/")
 
-	errorvar <- 0
-	currEnvir <- environment()
+  errorvar <- 0
+  currEnvir <- environment()
 
-	tryCatch({
-		  res <- GET(utils::URLencode(url))
-		  data <- httr::content(res, type="text", encoding="UTF-8")
-		},
-		error=function(e){
-		currEnvir$errorvar <- 1
-	})
+  tryCatch(
+    {
+      res <- httr::GET(utils::URLencode(url))
+      data <- httr::content(res, type = "text", encoding = "UTF-8")
+    },
+    error = function(e) {
+      currEnvir$errorvar <- 1
+    }
+  )
 
-	if(errorvar){
-		return(NA)
-	}
+  if (errorvar) {
+    return(NA)
+  }
 
-	molEnd <- regexpr(data,pattern="M  END",fixed=TRUE)+5
-	data <- c(strsplit(substring(data,1,molEnd),"\n")[[1]],"$$$$")
-	return(data)
+  molEnd <- regexpr(data, pattern = "M  END", fixed = TRUE) + 5
+  data <- c(strsplit(substring(data, 1, molEnd), "\n")[[1]], "$$$$")
+  return(data)
 }
 
 #' Search ChemSpider CSID
@@ -807,66 +857,70 @@ getPcSDF <- function(query, from = "smiles"){
 #' getDTXSID(key = "MKXZASYAUGDDCJ-NJAFHUGGSA-N", identifier = "InChIKey", api_key = "your RCS API key")
 #' }
 #' @export
-getCSID <- function(key, identifier, api_key)
+getCSID <- function(key, identifier, api_key) {
+  errorvar <- 0
+  currEnvir <- environment()
 
-{
-    errorvar <- 0
-    currEnvir <- environment()
+  tryCatch(
+    {
+      base_url <-
+          stringr::str_c("https://api.rsc.org/compounds/v1/filter/", identifier)
 
-    tryCatch({
-        base_url <- stringr::str_c("https://api.rsc.org/compounds/v1/filter/", identifier)
+      if (identifier == "inchikey") {
+        payload <-
+          stringr::str_c(
+            "{\n  \"inchikey\":\"", key, "\"\n}"
+          )
+      }
 
-        if (identifier == "inchikey") {
-            payload <-
-                stringr::str_c(
-                    "{\n  \"inchikey\":\"", key, "\"\n}"
-                    )
-        }
+      if (identifier == "name") {
+        payload <-
+          stringr::str_c(
+            "{\n  \"name\": \"", key, "\",\n  \"orderBy\": \"default\",\n  \"orderDirection\": \"default\"\n}"
+          )
+      }
 
-        if (identifier == "name") {
-            payload <-
-                stringr::str_c(
-                    "{\n  \"name\": \"", key,"\",\n  \"orderBy\": \"default\",\n  \"orderDirection\": \"default\"\n}"
-                    )
-        }
+      resp_1 <- httr::VERB("POST",
+        url = base_url,
+        body = payload,
+        add_headers("apikey" = api_key),
+        content_type("application/json"),
+        accept("application/json"),
+        encode = "json"
+      )
 
-        resp_1 <-   httr::VERB("POST",
-                     url = base_url,
-                     body = payload,
-                     add_headers('apikey' = api_key),
-                     content_type("application/json"),
-                     accept("application/json"),
-                     encode = "json"
-                     )
+      query_id <- httr::content(resp_1, "parsed")
 
-        query_id <- httr::content(resp_1, "parsed")
+      query_url <-
+          stringr::str_c(
+              "https://api.rsc.org/compounds/v1/filter/", query_id[[1]], "/results")
 
-        query_url <- stringr::str_c("https://api.rsc.org/compounds/v1/filter/", query_id[[1]], "/results")
+      resp_2 <- httr::VERB(
+        "GET",
+        query_url,
+        add_headers("apikey" = api_key),
+        content_type("application/octet-stream"),
+        accept("application/json")
+      )
 
-        resp_2 <- httr::VERB("GET",
-                               query_url,
-                               add_headers('apikey' = api_key),
-                               content_type("application/octet-stream"),
-                               accept("application/json"))
+      resp <- httr::content(resp_2, "parsed")
 
-        resp <- httr::content(resp_2, "parsed")
-
-        data <- resp$results[[1]]
-
+      data <- resp$results[[1]]
     },
-    error=function(e){
-        currEnvir$errorvar <- 1
-    })
-
-    if(errorvar){
-        return(NA)
+    error = function(e) {
+      currEnvir$errorvar <- 1
     }
+  )
 
-    csid <- data
+  if (errorvar) {
+    return(NA)
+  }
 
-    if(is.null(csid)){
-        return(NA)
-    } else{
-        return(csid)
-    }
+  csid <- data
+
+  if (is.null(csid)) {
+    return(NA)
+  } else {
+    return(csid)
+  }
 }
