@@ -62,10 +62,10 @@ getCAS <- function(parsedJDX) {return(getField(parsedJDX, 'CAS REGISTRY NO'))}
 getTitle <- function(parsedJDX) {return(getField(parsedJDX, 'TITLE'))}
 
 #' Convert CAS to SMILES
-#' 
+#'
 #' This is a wrapper for \code{webchem::cir_query}, using the
 #' CACTUS API at https://cactus.nci.nih.gov/chemical/structure_documentation
-#' for the conversion. Before converting the CAS number, the 
+#' for the conversion. Before converting the CAS number, the
 #' name is checked whether it contains the word 'derivative'.
 #' If so, the conversion is stopped and NA is returned.
 #' Also, a warning will be printed in this case.
@@ -141,9 +141,9 @@ createCompoundlist <- function() {
 #' @author pstahlhofen
 #' @export
 filterCompoundlist <- function(filename) {
-	compoundlist <- fread(filename)
+	compoundlist <- readr::read_csv(file = filename)
 	filtered <- compoundlist[which(compoundlist$SMILES!=""), ]
-	fwrite(filtered, file='Compoundlist_filtered.csv')
+	readr::write_csv(x = filtered, file = 'Compoundlist_filtered.csv')
 }
 
 #' Convert a Compoundlist into an SDF
@@ -162,7 +162,7 @@ filterCompoundlist <- function(filename) {
 #' @author pstahlhofen
 #' @export
 compoundlist2SDF <- function(filename) {
-	compoundlist <- fread(filename)
+	compoundlist <- readr::read_csv(file = filename)
 	SMILES <- compoundlist$SMILES
 	if (any(SMILES=="")) {
 		stop(paste("The provided compoundlist must be filtered",

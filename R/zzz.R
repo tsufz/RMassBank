@@ -3,7 +3,6 @@
 #' @importFrom assertthat assert_that has_args
 #' @importFrom Biobase isVersioned isCurrent classVersion<- classVersion
 #' @importFrom ChemmineR smiles2sdf validSDF write.SDF
-#' @importFrom data.table fread fwrite
 #' @import digest
 #' @importFrom dplyr rename_with select
 #' @import glue
