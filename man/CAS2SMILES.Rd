@@ -19,7 +19,7 @@ The SMILES code of the compound as character-string
 \description{
 This is a wrapper for \code{webchem::cir_query}, using the
 CACTUS API at https://cactus.nci.nih.gov/chemical/structure_documentation
-for the conversion. Before converting the CAS number, the 
+for the conversion. Before converting the CAS number, the
 name is checked whether it contains the word 'derivative'.
 If so, the conversion is stopped and NA is returned.
 Also, a warning will be printed in this case.
